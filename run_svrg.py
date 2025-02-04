@@ -15,7 +15,7 @@ from tqdm import tqdm
 from utils import Logger  # Предполагается, что Logger импортируется из utils
 
 class BaseOptimizer:
-    def __init__(self, model, data, loss_fn):
+    def __init__(self, model, data, loss_fn, lambda_value=None):
         self.model = model
         self.train_data = data[0]
         self.test_data = data[1]
@@ -26,10 +26,13 @@ class BaseOptimizer:
         self.train_logger = Logger()
         self.test_logger = Logger()
         self.grads_epochs_computed = 0
+        self.regularizer = lambda_value
 
     def run(self, epochs, lr, exp_name=None):
         if exp_name is None:
             exp_name = f'{self.__class__.__name__}_{lr=}_{epochs=}'
+            if self.regularizer is not None:
+                exp_name += f'_lambda={self.regularizer}'
         for _ in tqdm(range(epochs), desc=exp_name, ncols=100):
             self._train_epoch(lr)
             tqdm.write(f'Train Loss: {self.train_logger.loss[-1]:.4f},\t Train Accuracy: {self.train_logger.accuracy[-1]:.4f}')
@@ -52,6 +55,13 @@ class BaseOptimizer:
             model.train()
         outputs = model(inputs)
         loss = self.loss_fn(outputs, targets)
+        # Добавление L2 регуляризации
+        if self.regularizer is not None:
+            l2_reg = torch.tensor(0., requires_grad=True)
+            for param in model.parameters():
+                l2_reg = l2_reg + torch.norm(param, 2)
+            loss = loss + (self.regularizer/2) * l2_reg
+    
         loss.backward()
         if not is_test:
             self.grads_epochs_computed += 1 / self.train_batch_count
@@ -172,12 +182,14 @@ BATCH_SIZE = 128
 EPOCHS = 100
 FREQ = 4
 LR = 0.001
+LAMBDA_VALUE = 4e-4
 
 nfgsvrg = NFGSVRG(
     model=get_resnet18(DEVICE), 
     model_ref=get_resnet18(DEVICE), 
     data=get_data(BATCH_SIZE, DEVICE),
     loss_fn=torch.nn.CrossEntropyLoss(), 
+    lambda_value=LAMBDA_VALUE
     )
 
 nfgsvrg.run(int(EPOCHS/(2))+1, LR)
@@ -188,6 +200,7 @@ svrg = SVRG(
     model_ref=get_resnet18(DEVICE), 
     data=get_data(BATCH_SIZE, DEVICE),
     loss_fn=torch.nn.CrossEntropyLoss(), 
+    lambda_value=LAMBDA_VALUE,
     freq=FREQ
     )
 
@@ -197,7 +210,8 @@ svrg.dump_json()
 sgd = SGD(
     model=get_resnet18(DEVICE), 
     data=get_data(BATCH_SIZE, DEVICE),
-    loss_fn=torch.nn.CrossEntropyLoss()
+    loss_fn=torch.nn.CrossEntropyLoss(),
+    lambda_value=LAMBDA_VALUE
     )
 
 sgd.run(EPOCHS, LR)
