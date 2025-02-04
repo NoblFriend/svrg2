@@ -86,9 +86,9 @@ class BaseOptimizer:
 class SGD(BaseOptimizer):
     def _train_epoch(self, lr):
         # Перемешиваем индексы батчей
-        for idx in tqdm(torch.randperm(self.train_batch_count).tolist(),
+        for batch_num in tqdm(torch.randperm(self.train_batch_count).tolist(),
                         desc='Training', ncols=100, leave=False):
-            inputs, targets = self.train_data[idx]
+            inputs, targets = self.train_data[batch_num]
             loss, accuracy = self._forward_backward(self.model, inputs, targets, zero_grad=True, is_test=False)
             self.train_logger.append(loss.item(), accuracy, self.grads_epochs_computed)
             # Обновление параметров по SGD
@@ -105,9 +105,9 @@ class SVRG(BaseOptimizer):
         self._g_ref = None
 
     def _train_epoch(self, lr):
-        for idx in tqdm(torch.randperm(self.train_batch_count).tolist(),
+        for batch_num in tqdm(torch.randperm(self.train_batch_count).tolist(),
                         desc='Training', ncols=100, leave=False):
-            inputs, targets = self.train_data[idx]
+            inputs, targets = self.train_data[batch_num]
             # Периодически вычисляем полный градиент
             if torch.rand(1) < self.p or self._g_ref is None:
                 self._g_ref = self._compute_full_grad()
@@ -129,6 +129,37 @@ class SVRG(BaseOptimizer):
             self._forward_backward(self.model, inputs, targets, zero_grad=False, is_test=False)
         # Возвращаем усреднённый градиент по всему датасету
         return [param.grad.detach().clone() / self.train_batch_count for param in self.model.parameters()]
+    
+class NFGSVRG(BaseOptimizer):
+    def __init__(self, model, model_ref, data, loss_fn):
+        super().__init__(model, data, loss_fn)
+        self.model_ref = model_ref
+        self.model_ref.load_state_dict(self.model.state_dict())
+        self._g_ref = [torch.zeros_like(param) for param in self.model.parameters()] # v
+        self._g_avg = [torch.zeros_like(param) for param in self.model.parameters()] # v_tilde
+
+    def _train_epoch(self, lr):
+        for batch_num in tqdm(torch.randperm(self.train_batch_count).tolist(),
+                        desc='Training', ncols=100, leave=False):
+            inputs, targets = self.train_data[batch_num]
+            # Вычисляем градиенты для текущего батча на основной модели
+            loss, accuracy = self._forward_backward(self.model, inputs, targets, zero_grad=True, is_test=False)
+            self.train_logger.append(loss.item(), accuracy, self.grads_epochs_computed)
+            # Вычисляем градиенты для того же батча на эталонной модели
+            _, _ = self._forward_backward(self.model_ref, inputs, targets, zero_grad=True, is_test=False)
+            # Обновление среднего градиента
+            g_cur = [param.grad.detach().clone() for param in self.model.parameters()]
+            for idx, grad in enumerate(g_cur):
+                self._g_avg[idx] = (batch_num/(batch_num+1)) * self._g_avg[idx] +  (1/(batch_num+1)) * grad 
+            # Обновление параметров по схеме SVRG
+            for param, param_ref, grad_ref in zip(self.model.parameters(),
+                                                  self.model_ref.parameters(),
+                                                  self._g_ref):
+                param.data.add_(param.grad - param_ref.grad + grad_ref, alpha=-lr)
+        self._g_ref = self._g_avg
+        self._g_avg = [torch.zeros_like(param) for param in self.model.parameters()]
+        self.model_ref.load_state_dict(self.model.state_dict())
+
 
 
 set_seed(52)
@@ -136,14 +167,23 @@ DEVICE = get_device(3)
 BATCH_SIZE = 128
 EPOCHS = 100
 FREQ = 4
-LR = 0.02
+LR = 0.1
+
+nfgsvrg = NFGSVRG(
+    model=get_resnet18(DEVICE), 
+    model_ref=get_resnet18(DEVICE), 
+    data=get_data(BATCH_SIZE, DEVICE),
+    loss_fn=torch.nn.CrossEntropyLoss(), 
+    )
+
+nfgsvrg.run(int(EPOCHS/(2))+1, LR)
 
 svrg = SVRG(
     model=get_resnet18(DEVICE), 
     model_ref=get_resnet18(DEVICE), 
     data=get_data(BATCH_SIZE, DEVICE),
     loss_fn=torch.nn.CrossEntropyLoss(), 
-    freq=3
+    freq=FREQ
     )
 
 svrg.run(int(EPOCHS/(2+1/FREQ))+1, LR)
