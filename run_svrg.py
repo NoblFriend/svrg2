@@ -92,8 +92,9 @@ class SGD(BaseOptimizer):
             loss, accuracy = self._forward_backward(self.model, inputs, targets, zero_grad=True, is_test=False)
             self.train_logger.append(loss.item(), accuracy, self.grads_epochs_computed)
             # Обновление параметров по SGD
-            for param in self.model.parameters():
-                param.data.add_(param.grad, alpha=-lr)
+            with torch.no_grad():
+                for param in self.model.parameters():
+                    param.add_(param.grad, alpha=-lr)
 
 
 class SVRG(BaseOptimizer):
@@ -118,10 +119,11 @@ class SVRG(BaseOptimizer):
             # Вычисляем градиенты для того же батча на эталонной модели
             _, _ = self._forward_backward(self.model_ref, inputs, targets, zero_grad=True, is_test=False)
             # Обновление параметров по схеме SVRG
-            for param, param_ref, grad_ref in zip(self.model.parameters(),
-                                                  self.model_ref.parameters(),
-                                                  self._g_ref):
-                param.data.add_(param.grad - param_ref.grad + grad_ref, alpha=-lr)
+            with torch.no_grad():
+                for param, param_ref, grad_ref in zip(self.model.parameters(),
+                                                    self.model_ref.parameters(),
+                                                    self._g_ref):
+                    param.add_(param.grad - param_ref.grad + grad_ref, alpha=-lr)
 
     def _compute_full_grad(self):
         self.model.zero_grad()
@@ -139,9 +141,9 @@ class NFGSVRG(BaseOptimizer):
         self._g_avg = [torch.zeros_like(param) for param in self.model.parameters()] # v_tilde
 
     def _train_epoch(self, lr):
-        for batch_num in tqdm(torch.randperm(self.train_batch_count).tolist(),
-                        desc='Training', ncols=100, leave=False):
-            inputs, targets = self.train_data[batch_num]
+        for batch_num, batch_idx in enumerate(tqdm(torch.randperm(self.train_batch_count).tolist(),
+                        desc='Training', ncols=100, leave=False)):
+            inputs, targets = self.train_data[batch_idx]
             # Вычисляем градиенты для текущего батча на основной модели
             loss, accuracy = self._forward_backward(self.model, inputs, targets, zero_grad=True, is_test=False)
             self.train_logger.append(loss.item(), accuracy, self.grads_epochs_computed)
@@ -152,10 +154,11 @@ class NFGSVRG(BaseOptimizer):
             for idx, grad in enumerate(g_cur):
                 self._g_avg[idx] = (batch_num/(batch_num+1)) * self._g_avg[idx] +  (1/(batch_num+1)) * grad 
             # Обновление параметров по схеме SVRG
-            for param, param_ref, grad_ref in zip(self.model.parameters(),
-                                                  self.model_ref.parameters(),
-                                                  self._g_ref):
-                param.data.add_(param.grad - param_ref.grad + grad_ref, alpha=-lr)
+            with torch.no_grad():
+                for param, param_ref, grad_ref in zip(self.model.parameters(),
+                                                    self.model_ref.parameters(),
+                                                    self._g_ref):
+                    param.add_(param.grad - param_ref.grad + grad_ref, alpha=-lr)
         self._g_ref = [grad.clone() for grad in self._g_avg]
         for grad in self._g_avg:
             grad.zero_()
@@ -168,7 +171,7 @@ DEVICE = get_device(3)
 BATCH_SIZE = 128
 EPOCHS = 100
 FREQ = 4
-LR = 0.1
+LR = 0.001
 
 nfgsvrg = NFGSVRG(
     model=get_resnet18(DEVICE), 
@@ -178,6 +181,7 @@ nfgsvrg = NFGSVRG(
     )
 
 nfgsvrg.run(int(EPOCHS/(2))+1, LR)
+nfgsvrg.dump_json()
 
 svrg = SVRG(
     model=get_resnet18(DEVICE), 
@@ -188,7 +192,6 @@ svrg = SVRG(
     )
 
 svrg.run(int(EPOCHS/(2+1/FREQ))+1, LR)
-
 svrg.dump_json()
 
 sgd = SGD(
@@ -198,5 +201,4 @@ sgd = SGD(
     )
 
 sgd.run(EPOCHS, LR)
-
 sgd.dump_json()
