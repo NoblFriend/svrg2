@@ -156,8 +156,9 @@ class NFGSVRG(BaseOptimizer):
                                                   self.model_ref.parameters(),
                                                   self._g_ref):
                 param.data.add_(param.grad - param_ref.grad + grad_ref, alpha=-lr)
-        self._g_ref = self._g_avg
-        self._g_avg = [torch.zeros_like(param) for param in self.model.parameters()]
+        self._g_ref = [grad.clone() for grad in self._g_avg]
+        for grad in self._g_avg:
+            grad.zero_()
         self.model_ref.load_state_dict(self.model.state_dict())
 
 
