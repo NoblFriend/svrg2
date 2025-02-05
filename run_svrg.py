@@ -177,10 +177,12 @@ class NFGSVRG(BaseOptimizer):
 set_seed(52)
 DEVICE = get_device(3)
 BATCH_SIZE = 128
-EPOCHS = 100
-FREQ = 4
-LR = 0.001
-LAMBDA_VALUE = 4e-3
+# EPOCHS = 100
+EPOCHS = 50
+FREQ = 3
+LR = 0.005
+# LAMBDA_VALUE = 4e-3
+LAMBDA_VALUE = None
 
 nfgsvrg = NFGSVRG(
     model=get_resnet18(DEVICE), 

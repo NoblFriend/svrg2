@@ -70,8 +70,8 @@ def get_device(pos=None):
     
 
 def get_resnet18(device):
-    import torchvision.models as models
-    model = models.resnet18()
+    from resnet import ResNet18
+    model = ResNet18()
     model = model.to(device)
     return model
 
