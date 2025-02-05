@@ -42,14 +42,11 @@ def _load_cifar(batch_size=128):
     
     return trainloader, testloader, classes
 
-def _loader_to_device(loader, device):
+def loader_to_device(loader, device):
     return [(x.to(device), y.to(device)) for x, y in loader]
 
-def get_data(batch_size, device=None, classes=False):
+def get_data_loaders(batch_size, classes=False):
     trainloader, testloader, classes = _load_cifar(batch_size)
-    if device is not None:
-        trainloader = _loader_to_device(trainloader, device)
-        testloader = _loader_to_device(testloader, device)
     if classes:
         return trainloader, testloader, classes
     else:    
