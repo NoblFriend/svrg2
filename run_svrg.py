@@ -58,9 +58,10 @@ class BaseOptimizer:
         # Добавление L2 регуляризации
         if self.regularizer is not None:
             for param in model.parameters():
-                loss +=  (self.regularizer/2) * torch.norm(param, 2)
-    
-        loss.backward()
+                loss += (self.regularizer/2) * torch.sum(param ** 2)
+
+        if not is_test:
+            loss.backward()
         if not is_test:
             self.grads_epochs_computed += 1 / self.train_batch_count
         _, predicted = outputs.max(1)
@@ -178,11 +179,21 @@ set_seed(52)
 DEVICE = get_device(3)
 BATCH_SIZE = 128
 # EPOCHS = 100
-EPOCHS = 50
+EPOCHS = 30
 FREQ = 3
 LR = 0.005
-# LAMBDA_VALUE = 4e-3
-LAMBDA_VALUE = None
+LAMBDA_VALUE = 4e-4
+# LAMBDA_VALUE = None
+
+sgd = SGD(
+    model=get_resnet18(DEVICE), 
+    data=get_data(BATCH_SIZE, DEVICE),
+    loss_fn=torch.nn.CrossEntropyLoss(),
+    lambda_value=LAMBDA_VALUE
+    )
+
+sgd.run(EPOCHS, LR)
+sgd.dump_json()
 
 nfgsvrg = NFGSVRG(
     model=get_resnet18(DEVICE), 
@@ -206,13 +217,3 @@ svrg = SVRG(
 
 svrg.run(int(EPOCHS/(2+1/FREQ))+1, LR)
 svrg.dump_json()
-
-sgd = SGD(
-    model=get_resnet18(DEVICE), 
-    data=get_data(BATCH_SIZE, DEVICE),
-    loss_fn=torch.nn.CrossEntropyLoss(),
-    lambda_value=LAMBDA_VALUE
-    )
-
-sgd.run(EPOCHS, LR)
-sgd.dump_json()
