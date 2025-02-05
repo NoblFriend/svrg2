@@ -57,10 +57,8 @@ class BaseOptimizer:
         loss = self.loss_fn(outputs, targets)
         # Добавление L2 регуляризации
         if self.regularizer is not None:
-            l2_reg = torch.tensor(0., requires_grad=True)
             for param in model.parameters():
-                l2_reg = l2_reg + torch.norm(param, 2)
-            loss = loss + (self.regularizer/2) * l2_reg
+                loss +=  (self.regularizer/2) * torch.norm(param, 2)
     
         loss.backward()
         if not is_test:
@@ -108,8 +106,8 @@ class SGD(BaseOptimizer):
 
 
 class SVRG(BaseOptimizer):
-    def __init__(self, model, model_ref, data, loss_fn, freq=3.5):
-        super().__init__(model, data, loss_fn)
+    def __init__(self, model, model_ref, data, loss_fn, lambda_value=None, freq=3.5):
+        super().__init__(model, data, loss_fn, lambda_value)
         self.model_ref = model_ref
         self.freq = freq
         self.p = 1 / (freq * self.train_batch_count)
@@ -143,8 +141,8 @@ class SVRG(BaseOptimizer):
         return [param.grad.detach().clone() / self.train_batch_count for param in self.model.parameters()]
     
 class NFGSVRG(BaseOptimizer):
-    def __init__(self, model, model_ref, data, loss_fn):
-        super().__init__(model, data, loss_fn)
+    def __init__(self, model, model_ref, data, loss_fn, lambda_value=None):
+        super().__init__(model, data, loss_fn, lambda_value)
         self.model_ref = model_ref
         self.model_ref.load_state_dict(self.model.state_dict())
         self._g_ref = [torch.zeros_like(param) for param in self.model.parameters()] # v
@@ -182,7 +180,7 @@ BATCH_SIZE = 128
 EPOCHS = 100
 FREQ = 4
 LR = 0.001
-LAMBDA_VALUE = 4e-4
+LAMBDA_VALUE = 4e-3
 
 nfgsvrg = NFGSVRG(
     model=get_resnet18(DEVICE), 
