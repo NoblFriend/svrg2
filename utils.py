@@ -67,8 +67,15 @@ def get_device(pos=None):
     
 
 def get_resnet18(device):
-    from resnet import ResNet18
+    from models import ResNet18
     model = ResNet18()
+    model = model.to(device)
+    return model
+
+
+def get_simple_model(device):
+    from models import CifarNet
+    model = CifarNet()
     model = model.to(device)
     return model
 
