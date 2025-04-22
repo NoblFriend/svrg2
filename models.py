@@ -149,3 +149,37 @@ class CifarNet(nn.Module):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         return self.fc3(x)
+
+from timm import create_model
+
+def get_swin_tiny_from_timm(device, num_classes=200):
+    model = create_model(
+        'swin_tiny_patch4_window7_224.ms_in22k',
+        pretrained=True, 
+    )
+    
+    # Заморозить все параметры
+    for param in model.parameters():
+        param.requires_grad = False
+
+    # Предполагая, что модель имеет 4 этапа в model.layers,
+    # размораживаем последние 2 этапа (индексы 2 и 3)
+    total_stages = len(model.layers)
+    for i, stage in enumerate(model.layers):
+        if i >= total_stages // 2:  # i >= 2 при 4 этапах
+            for param in stage.parameters():
+                param.requires_grad = True
+
+    # Если требуется, можно разморозить и слой нормализации после блоков
+    for param in model.norm.parameters():
+        param.requires_grad = True
+
+    # Заменяем классификационную голову для нужного числа классов
+    in_features = model.head.fc.in_features  # ожидается, что это 768
+    model.head.fc = nn.Linear(in_features, num_classes)
+    
+    # Разморозить параметры классификационной головы
+    for param in model.head.fc.parameters():
+        param.requires_grad = True
+
+    return model.to(device)
